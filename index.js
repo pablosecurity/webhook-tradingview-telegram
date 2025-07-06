@@ -1,40 +1,56 @@
-const express = require('express');
-const axios = require('axios');
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const TELEGRAM_TOKEN = '7967775347:AAEGmdVgEvksdPnz2195rNKNgdjb_PkhMYA';
-const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+app.use(express.text({ type: "*/*" })); // aceita JSON ou texto puro
 
-app.use(express.json());
+const TELEGRAM_BOT_TOKEN = "7967775347:AAEGmdVgEvksdPnz2195rNKNgdjb_PkhMYA";
 
-// Health check endpoint
-app.get('/', (req, res) => {
-  res.json({ status: 'OK', message: 'Webhook TradingView -> Telegram está funcionando!' });
-});
+app.post("/", async (req, res) => {
+  console.log("🔔 Webhook recebido");
 
-app.post('/', async (req, res) => {
-  const { chat_id, text } = req.body;
+  let payload = req.body;
 
-  if (!chat_id || !text) {
-    return res.status(400).json({ error: 'Os campos chat_id e text são obrigatórios.' });
+  // Log bruto da requisição recebida
+  console.log("📦 Body recebido:", payload);
+
+  // Se for string (como vem do TradingView), tenta converter
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch (err) {
+      console.error("❌ Erro ao fazer parse do JSON:", err.message);
+      return res.status(400).send("Erro ao parsear JSON");
+    }
   }
+
+  const { chat_id, text } = payload;
+
+  // Verifica se os campos obrigatórios existem
+  if (!chat_id || !text) {
+    console.warn("⚠️ chat_id ou text ausentes");
+    return res.status(400).send("chat_id e text obrigatórios");
+  }
+
+  // Envia para o Telegram
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
   try {
-    const response = await axios.post(TELEGRAM_API_URL, {
+    const response = await axios.post(url, {
       chat_id,
-      text
+      text,
+      parse_mode: "Markdown"
     });
-    if (response.data && response.data.ok) {
-      return res.sendStatus(200);
-    } else {
-      return res.status(500).json({ error: 'Falha ao enviar mensagem para o Telegram.' });
-    }
+
+    console.log("✅ Mensagem enviada com sucesso:", response.data);
+    res.send("Mensagem enviada com sucesso");
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao enviar mensagem para o Telegram.', details: error.message });
+    console.error("❌ Erro ao enviar para o Telegram:", error.response?.data || error.message);
+    res.status(500).send("Erro ao enviar para o Telegram");
   }
 });
 
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor webhook rodando na porta ${PORT}`);
-}); 
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+});
