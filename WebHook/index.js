@@ -182,12 +182,30 @@ app.post("/", async (req, res) => {
         parsedKeys: Object.keys(payload)
       });
     } catch (err) {
-      adicionarLog('erro', 'Erro ao fazer parse do JSON', {
+      // Tenta extrair informações mesmo com JSON inválido
+      adicionarLog('erro', 'Erro ao fazer parse do JSON, tentando extrair dados', {
         error: err.message,
         body: req.body
       });
-      console.error("❌ Erro ao fazer parse do JSON:", err.message);
-      return res.status(400).send("Erro ao parsear JSON");
+      
+      // Tenta extrair chat_id e text mesmo com JSON inválido
+      const chatIdMatch = req.body.match(/"chat_id"\s*:\s*"([^"]+)"/);
+      const textMatch = req.body.match(/"text"\s*:\s*"([^"]+)"/);
+      
+      if (chatIdMatch && textMatch) {
+        payload = {
+          chat_id: chatIdMatch[1],
+          text: textMatch[1].replace(/\\n/g, '\n')
+        };
+        
+        adicionarLog('json_recovery', 'Dados extraídos com sucesso do JSON inválido', {
+          chat_id: payload.chat_id,
+          textLength: payload.text.length
+        });
+      } else {
+        console.error("❌ Erro ao fazer parse do JSON:", err.message);
+        return res.status(400).send("Erro ao parsear JSON");
+      }
     }
   } else {
     adicionarLog('json_parse', 'Payload já era objeto JSON', {

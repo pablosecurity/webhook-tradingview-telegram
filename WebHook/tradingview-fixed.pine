@@ -1,0 +1,117 @@
+//@version=6
+indicator("Ultima versao com alertcondition", overlay=true)
+
+atrPeriod = input.int(10, "Supertrend ATR Period")
+factor = input.float(3.0, "Supertrend Factor")
+[supertrend, direction] = ta.supertrend(factor, atrPeriod)
+
+swingLen = input.int(15, "Swing Length")
+swingHigh = ta.highest(high, swingLen)
+swingLow = ta.lowest(low, swingLen)
+atr = ta.atr(atrPeriod)
+strongBullish = close > open and (close - open) > atr * 0.3
+strongBearish = close < open and (open - close) > atr * 0.3
+chochUp = close > swingHigh[1] and strongBullish
+chochDown = close < swingLow[1] and strongBearish
+
+tr = ta.tr(true)
+isConsolidating = tr < ta.sma(tr, 50)
+lengthADX = input.int(14, "ADX Length")
+upMove = high - high[1]
+downMove = low[1] - low
+plusDM = (upMove > downMove and upMove > 0) ? upMove : 0
+minusDM = (downMove > upMove and downMove > 0) ? downMove : 0
+trur = ta.rma(tr, lengthADX)
+plusDI = 100 * ta.rma(plusDM, lengthADX) / trur
+minusDI = 100 * ta.rma(minusDM, lengthADX) / trur
+dx = 100 * math.abs(plusDI - minusDI) / (plusDI + minusDI)
+adx = ta.rma(dx, lengthADX)
+lowVolatility = adx < 20
+
+longEntry = (chochUp and direction == 1 and not isConsolidating) or (direction == 1 and not isConsolidating and not lowVolatility)
+shortEntry = (chochDown and direction == -1 and not isConsolidating) or (direction == -1 and not isConsolidating and not lowVolatility)
+
+trailMult = input.float(1.5, "Trailing Offset (x ATR)")
+trailOffset = atr * trailMult
+
+var float trailStop = na
+var float entryPrice = na
+var bool inPosition = false
+var bool isLong = false
+
+// === ALERT SUPPORT ===
+var string alertMessage = ""
+var bool fireAlert = false
+
+// Função para formatar tempo corretamente
+formatTime() =>
+    yearStr = str.tostring(year)
+    monthStr = str.tostring(month, "00")
+    dayStr = str.tostring(dayofmonth, "00")
+    hourStr = str.tostring(hour, "00")
+    minuteStr = str.tostring(minute, "00")
+    secondStr = str.tostring(second, "00")
+    yearStr + "-" + monthStr + "-" + dayStr + " " + hourStr + ":" + minuteStr + ":" + secondStr
+
+if longEntry and not inPosition
+    isLong := true
+    inPosition := true
+    entryPrice := close
+    trailStop := close - trailOffset
+    label.new(bar_index, low, "Long Entry @" + str.tostring(close), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.tiny)
+    alertMessage := '{"chat_id":"7688351514","text":"📈 ENTRADA LONG\nAtivo: ' + syminfo.ticker + '\nPreço Entrada: ' + str.tostring(entryPrice) + '\nTrailing Stop: ' + str.tostring(trailStop) + '\nHora: ' + formatTime() + '"}' 
+    alert(alertMessage, alert.freq_once_per_bar)
+    fireAlert := true
+
+if shortEntry and not inPosition
+    isLong := false
+    inPosition := true
+    entryPrice := close
+    trailStop := close + trailOffset
+    label.new(bar_index, high, "Short Entry @" + str.tostring(close), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+    alertMessage := '{"chat_id":"7688351514","text":"📉 ENTRADA SHORT\nAtivo: ' + syminfo.ticker + '\nPreço Entrada: ' + str.tostring(entryPrice) + '\nTrailing Stop: ' + str.tostring(trailStop) + '\nHora: ' + formatTime() + '"}' 
+    alert(alertMessage, alert.freq_once_per_bar)
+    fireAlert := true
+
+if inPosition
+    newStop = isLong ? math.max(trailStop, close - trailOffset) : math.min(trailStop, close + trailOffset)
+    if newStop != trailStop
+        trailStop := newStop
+        label.new(bar_index, isLong ? low : high, "TS @" + str.tostring(trailStop), style=label.style_label_right, color=color.fuchsia, textcolor=color.white, size=size.tiny)
+        alertMessage := '{"chat_id":"7688351514","text":"🔄 Atualização Trailing\nDireção: ' + (isLong ? "LONG" : "SHORT") + '\nNovo TS: ' + str.tostring(trailStop) + '\nAtivo: ' + syminfo.ticker + '\nHora: ' + formatTime() + '"}' 
+        alert(alertMessage, alert.freq_once_per_bar)
+        fireAlert := true
+
+exitByTS = inPosition and ((isLong and close <= trailStop) or (not isLong and close >= trailStop))
+if exitByTS
+    saidaPreco = close
+    lucro = isLong ? (saidaPreco - entryPrice) : (entryPrice - saidaPreco)
+    resultado = lucro > 0 ? "lucro" : "prejuizo"
+    direcao = isLong ? "LONG" : "SHORT"
+    label.new(bar_index, high, "Exit TS @" + str.tostring(close), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+    alertMessage := '{"chat_id":"7688351514","text":"🚪 Saída TS\nDireção: ' + direcao + '\nPreço Saída: ' + str.tostring(saidaPreco) + '\nResultado: ' + resultado + '\nAtivo: ' + syminfo.ticker + '\nHora: ' + formatTime() + '"}' 
+    alert(alertMessage, alert.freq_once_per_bar)
+    fireAlert := true
+    inPosition := false
+
+exitByFlip = inPosition and ((isLong and direction == -1) or (not isLong and direction == 1))
+if exitByFlip
+    saidaPreco = close
+    lucro = isLong ? (saidaPreco - entryPrice) : (entryPrice - saidaPreco)
+    resultado = lucro > 0 ? "lucro" : "prejuizo"
+    direcao = isLong ? "LONG" : "SHORT"
+    label.new(bar_index, high, "Exit Flip @" + str.tostring(close), style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.tiny)
+    alertMessage := '{"chat_id":"7688351514","text":"🔄 Saída por Inversão\nDireção: ' + direcao + '\nPreço Saída: ' + str.tostring(saidaPreco) + '\nResultado: ' + resultado + '\nAtivo: ' + syminfo.ticker + '\nHora: ' + formatTime() + '"}' 
+    alert(alertMessage, alert.freq_once_per_bar)
+    fireAlert := true
+    inPosition := false
+
+// === Painel ===
+var table statusPanel = table.new(position.top_right, 2, 2, border_width=1)
+table.cell(statusPanel, 0, 0, "Status", text_color=color.white, bgcolor=color.gray)
+table.cell(statusPanel, 1, 0, inPosition ? (isLong ? "LONG" : "SHORT") : "FLAT", text_color=color.white, bgcolor=inPosition ? (isLong ? color.green : color.red) : color.gray)
+table.cell(statusPanel, 0, 1, "Trailing", text_color=color.white, bgcolor=color.gray)
+table.cell(statusPanel, 1, 1, na(trailStop) ? "-" : str.tostring(trailStop), text_color=color.white, bgcolor=color.purple)
+
+// === ALERTCONDITION correto agora ===
+alertcondition(fireAlert, title="Webhook JSON", message="Alerta gerado") 
