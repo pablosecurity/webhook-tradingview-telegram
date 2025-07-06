@@ -161,130 +161,34 @@ function limparJSON(jsonString) {
   return jsonString.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
 }
 
-app.post("/", async (req, res) => {
-  adicionarLog('webhook_recebido', 'Webhook POST recebido', {
-    ip: req.ip || req.connection.remoteAddress,
-    userAgent: req.get('User-Agent'),
-    contentType: req.get('Content-Type')
-  });
+const CHAT_ID_PADRAO = "7688351514";
 
+app.post(["/", "/webhook"], async (req, res) => {
+  let chat_id = req.query.chat_id || CHAT_ID_PADRAO;
   let payload = req.body;
-  console.log("📦 Body recebido:", payload);
+  let text = null;
 
-  if (typeof payload === "string") {
-    try {
-      // Limpa o JSON antes de fazer parse
-      const jsonLimpo = limparJSON(payload);
-      payload = JSON.parse(jsonLimpo);
-      
-      adicionarLog('json_parse', 'JSON parseado com sucesso', {
-        originalLength: req.body.length,
-        parsedKeys: Object.keys(payload)
-      });
-    } catch (err) {
-      // Tenta extrair informações mesmo com JSON inválido
-      adicionarLog('erro', 'Erro ao fazer parse do JSON, tentando extrair dados', {
-        error: err.message,
-        body: req.body
-      });
-      
-      // Verifica se é apenas texto simples (sem JSON)
-      if (!req.body.includes('"chat_id"') && !req.body.includes('"text"')) {
-        console.log("🔍 Detectado texto simples, criando JSON...");
-        
-        // Cria um JSON válido com o texto recebido
-        payload = {
-          chat_id: "7688351514", // Chat ID padrão
-          text: req.body
-        };
-        
-        adicionarLog('text_recovery', 'Texto simples convertido para JSON', {
-          chat_id: payload.chat_id,
-          textLength: payload.text.length,
-          originalBody: req.body.substring(0, 200) + '...'
-        });
-        
-        console.log("✅ Texto convertido para JSON:", payload);
-      } else {
-        // Tenta extrair chat_id e text mesmo com JSON inválido
-        console.log("🔍 Tentando extrair dados do JSON inválido...");
-        console.log("🔍 Body completo:", req.body);
-        
-        // Regex mais robusto para extrair dados - incluindo quebras de linha
-        const chatIdMatch = req.body.match(/"chat_id"\s*:\s*"([^"]+)"/);
-        const textMatch = req.body.match(/"text"\s*:\s*"([^"]*?)"/);
-        
-        console.log("🔍 Chat ID match:", chatIdMatch);
-        console.log("🔍 Text match:", textMatch);
-        
-        if (chatIdMatch && textMatch) {
-          // Limpa o texto de caracteres especiais
-          let cleanText = textMatch[1]
-            .replace(/\\n/g, '\n')
-            .replace(/\\r/g, '\r')
-            .replace(/\\t/g, '\t')
-            .replace(/\\"/g, '"')
-            .replace(/\\\\/g, '\\');
-          
-          payload = {
-            chat_id: chatIdMatch[1],
-            text: cleanText
-          };
-          
-          adicionarLog('json_recovery', 'Dados extraídos com sucesso do JSON inválido', {
-            chat_id: payload.chat_id,
-            textLength: payload.text.length,
-            originalBody: req.body.substring(0, 200) + '...'
-          });
-          
-          console.log("✅ Dados extraídos:", payload);
-        } else {
-          // Tenta uma abordagem mais simples
-          console.log("🔍 Tentando abordagem alternativa...");
-          
-          // Remove caracteres problemáticos e tenta parsear novamente
-          let cleanedBody = req.body
-            .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-            .replace(/yyyy-MM-dd HH:mm:ss\d+/g, '2025-07-06 16:36:19');
-          
-          try {
-            payload = JSON.parse(cleanedBody);
-            adicionarLog('json_recovery', 'JSON parseado após limpeza', {
-              chat_id: payload.chat_id,
-              textLength: payload.text?.length || 0
-            });
-            console.log("✅ JSON parseado após limpeza:", payload);
-          } catch (secondError) {
-            console.error("❌ Não foi possível extrair dados do JSON inválido");
-            console.error("❌ Body recebido:", req.body);
-            return res.status(400).send("Erro ao parsear JSON");
-          }
-        }
-      }
-    }
-  } else {
-    adicionarLog('json_parse', 'Payload já era objeto JSON', {
-      keys: Object.keys(payload)
-    });
+  // Se for JSON válido com chat_id/text, usa normalmente
+  if (typeof payload === "object" && payload !== null && payload.text) {
+    text = payload.text;
+    if (payload.chat_id) chat_id = payload.chat_id;
+  } else if (typeof payload === "string") {
+    // Se for texto puro, usa como mensagem
+    text = payload;
   }
 
-  const { chat_id, text } = payload;
-
-  if (!chat_id || !text) {
-    adicionarLog('erro', 'Campos obrigatórios ausentes', {
-      chat_id: !!chat_id,
-      text: !!text,
-      payload: payload
-    });
-    console.warn("⚠️ chat_id ou text ausentes");
-    return res.status(400).send("chat_id e text obrigatórios");
+  if (!text) {
+    adicionarLog('erro', 'Nenhum texto para enviar', { body: req.body });
+    return res.status(400).send("Nenhum texto para enviar");
   }
 
-  adicionarLog('validacao', 'Campos obrigatórios validados', {
-    chat_id: chat_id,
-    textLength: text.length
+  adicionarLog('webhook_recebido', 'Mensagem recebida para envio', {
+    chat_id,
+    textLength: text.length,
+    ip: req.ip || req.connection.remoteAddress
   });
 
+  // Salva alerta
   const alerta = {
     id: Date.now(),
     timestamp: new Date().toISOString(),
@@ -292,46 +196,21 @@ app.post("/", async (req, res) => {
     text,
     ip: req.ip || req.connection.remoteAddress
   };
-
   alertasRecebidos.push(alerta);
-
   if (alertasRecebidos.length > MAX_ALERTAS) {
     alertasRecebidos = alertasRecebidos.slice(-MAX_ALERTAS);
   }
-
   salvarAlertas();
-  console.log("📝 Alerta salvo:", alerta);
 
+  // Envia para o Telegram
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
   try {
-    adicionarLog('telegram_envio', 'Iniciando envio ao Telegram', {
-      chat_id: chat_id,
-      textLength: text.length
-    });
-
-    const response = await axios.post(url, {
-      chat_id,
-      text,
-      parse_mode: "Markdown"
-    });
-
-    adicionarLog('telegram_sucesso', 'Mensagem enviada com sucesso', {
-      messageId: response.data?.result?.message_id,
-      chatId: response.data?.result?.chat?.id,
-      telegramResponse: response.data
-    });
-
-    console.log("✅ Mensagem enviada com sucesso:", response.data);
+    adicionarLog('telegram_envio', 'Enviando mensagem para Telegram', { chat_id, textLength: text.length });
+    const response = await axios.post(url, { chat_id, text, parse_mode: "Markdown" });
+    adicionarLog('telegram_sucesso', 'Mensagem enviada com sucesso', { messageId: response.data?.result?.message_id, chatId: response.data?.result?.chat?.id });
     res.send("Mensagem enviada com sucesso");
   } catch (error) {
-    adicionarLog('erro', 'Erro ao enviar para o Telegram', {
-      error: error.message,
-      telegramError: error.response?.data,
-      statusCode: error.response?.status
-    });
-
-    console.error("❌ Erro ao enviar para o Telegram:", error.response?.data || error.message);
+    adicionarLog('erro', 'Erro ao enviar para o Telegram', { error: error.message, telegramError: error.response?.data });
     res.status(500).send("Erro ao enviar para o Telegram");
   }
 });
