@@ -6,6 +6,11 @@ app.use(express.text({ type: "*/*" })); // aceita JSON ou texto puro
 
 const TELEGRAM_BOT_TOKEN = "7967775347:AAEGmdVgEvksdPnz2195rNKNgdjb_PkhMYA";
 
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'OK', message: 'Webhook TradingView -> Telegram está funcionando!' });
+});
+
 app.post("/", async (req, res) => {
   console.log("🔔 Webhook recebido");
 
