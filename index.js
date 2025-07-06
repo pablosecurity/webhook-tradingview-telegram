@@ -159,120 +159,42 @@ app.delete('/logs', (req, res) => {
   }
 });
 
-app.post("/", async (req, res) => {
-  // Log 1: Webhook recebido
-  adicionarLog('webhook_recebido', 'Webhook POST recebido', {
-    ip: req.ip || req.connection.remoteAddress,
-    userAgent: req.get('User-Agent'),
-    contentType: req.get('Content-Type')
+const CHAT_ID_PADRAO = "7688351514";
+
+app.post(["/", "/webhook"], async (req, res) => {
+  let chat_id = req.query.chat_id || CHAT_ID_PADRAO;
+  let text = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+  adicionarLog('webhook_recebido', 'Mensagem recebida para envio', {
+    chat_id,
+    textLength: text.length,
+    ip: req.ip || req.connection.remoteAddress
   });
 
-  let payload = req.body;
-
-  // Log bruto da requisição recebida
-  console.log("📦 Body recebido:", payload);
-
-  // Se for string (como vem do TradingView), tenta converter
-  if (typeof payload === "string") {
-    try {
-      payload = JSON.parse(payload);
-      // Log 2: JSON parseado com sucesso
-      adicionarLog('json_parse', 'JSON parseado com sucesso', {
-        originalLength: req.body.length,
-        parsedKeys: Object.keys(payload)
-      });
-    } catch (err) {
-      // Log 3: Erro no parse do JSON
-      adicionarLog('erro', 'Erro ao fazer parse do JSON', {
-        error: err.message,
-        body: req.body
-      });
-      console.error("❌ Erro ao fazer parse do JSON:", err.message);
-      return res.status(400).send("Erro ao parsear JSON");
-    }
-  } else {
-    // Log 2: Payload já era objeto
-    adicionarLog('json_parse', 'Payload já era objeto JSON', {
-      keys: Object.keys(payload)
-    });
-  }
-
-  const { chat_id, text } = payload;
-
-  // Verifica se os campos obrigatórios existem
-  if (!chat_id || !text) {
-    // Log 4: Campos obrigatórios ausentes
-    adicionarLog('erro', 'Campos obrigatórios ausentes', {
-      chat_id: !!chat_id,
-      text: !!text,
-      payload: payload
-    });
-    console.warn("⚠️ chat_id ou text ausentes");
-    return res.status(400).send("chat_id e text obrigatórios");
-  }
-
-  // Log 5: Validação bem-sucedida
-  adicionarLog('validacao', 'Campos obrigatórios validados', {
-    chat_id: chat_id,
-    textLength: text.length
-  });
-
-  // Salva o alerta recebido
+  // Salva alerta (sempre salva o texto original recebido)
   const alerta = {
     id: Date.now(),
     timestamp: new Date().toISOString(),
     chat_id,
     text,
+    original: text,
     ip: req.ip || req.connection.remoteAddress
   };
-
-  // Adiciona o alerta ao array
   alertasRecebidos.push(alerta);
-
-  // Remove alertas antigos se exceder o limite
   if (alertasRecebidos.length > MAX_ALERTAS) {
     alertasRecebidos = alertasRecebidos.slice(-MAX_ALERTAS);
   }
-
-  // Salva no arquivo
   salvarAlertas();
-
-  console.log("📝 Alerta salvo:", alerta);
 
   // Envia para o Telegram
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
   try {
-    // Log 6: Iniciando envio ao Telegram
-    adicionarLog('telegram_envio', 'Iniciando envio ao Telegram', {
-      chat_id: chat_id,
-      textLength: text.length
-    });
-
-    const response = await axios.post(url, {
-      chat_id,
-      text,
-      parse_mode: "Markdown"
-    });
-
-    // Log 7: Envio bem-sucedido
-    adicionarLog('telegram_sucesso', 'Mensagem enviada com sucesso', {
-      messageId: response.data?.result?.message_id,
-      chatId: response.data?.result?.chat?.id,
-      telegramResponse: response.data
-    });
-
-    console.log("✅ Mensagem enviada com sucesso:", response.data);
+    adicionarLog('telegram_envio', 'Enviando mensagem para Telegram', { chat_id, textLength: text.length });
+    const response = await axios.post(url, { chat_id, text, parse_mode: "Markdown" });
+    adicionarLog('telegram_sucesso', 'Mensagem enviada com sucesso', { messageId: response.data?.result?.message_id, chatId: response.data?.result?.chat?.id });
     res.send("Mensagem enviada com sucesso");
   } catch (error) {
-    // Log 8: Erro no envio ao Telegram
-    adicionarLog('erro', 'Erro ao enviar para o Telegram', {
-      error: error.message,
-      telegramError: error.response?.data,
-      statusCode: error.response?.status
-    });
-
-    console.error("❌ Erro ao enviar para o Telegram:", error.response?.data || error.message);
+    adicionarLog('erro', 'Erro ao enviar para o Telegram', { error: error.message, telegramError: error.response?.data });
     res.status(500).send("Erro ao enviar para o Telegram");
   }
 });
