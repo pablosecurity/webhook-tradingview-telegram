@@ -10,6 +10,7 @@ app.use(express.text({ type: "*/*" })); // aceita JSON ou texto puro
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TELEGRAM_BOT_TOKEN = "7967775347:AAEGmdVgEvksdPnz2195rNKNgdjb_PkhMYA";
+const CHAT_ID_PADRAO = "7688351514";
 
 // Sistema de logs
 const LOG_FILE = 'webhook-logs.json';
@@ -161,12 +162,12 @@ function limparJSON(jsonString) {
   return jsonString.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
 }
 
-const CHAT_ID_PADRAO = "7688351514";
-
+// Webhook principal: aceita texto puro ou JSON
 app.post(["/", "/webhook"], async (req, res) => {
   let chat_id = req.query.chat_id || CHAT_ID_PADRAO;
   let payload = req.body;
   let text = null;
+  let original = req.body;
 
   // Se for JSON válido com chat_id/text, usa normalmente
   if (typeof payload === "object" && payload !== null && payload.text) {
@@ -177,10 +178,7 @@ app.post(["/", "/webhook"], async (req, res) => {
     text = payload;
   }
 
-  if (!text) {
-    adicionarLog('erro', 'Nenhum texto para enviar', { body: req.body });
-    return res.status(400).send("Nenhum texto para enviar");
-  }
+  if (!text) text = String(original);
 
   adicionarLog('webhook_recebido', 'Mensagem recebida para envio', {
     chat_id,
@@ -188,12 +186,13 @@ app.post(["/", "/webhook"], async (req, res) => {
     ip: req.ip || req.connection.remoteAddress
   });
 
-  // Salva alerta
+  // Salva alerta (sempre salva o texto original recebido)
   const alerta = {
     id: Date.now(),
     timestamp: new Date().toISOString(),
     chat_id,
     text,
+    original,
     ip: req.ip || req.connection.remoteAddress
   };
   alertasRecebidos.push(alerta);

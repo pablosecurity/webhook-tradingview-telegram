@@ -246,7 +246,7 @@
                 </div>
             </div>
             
-            <div id="alertas-tab" class="tab-content">
+            <div id="alertas-tab" class="tab-content active">
                 <div class="controls">
                     <button class="btn btn-primary" onclick="loadAlertas()">🔄 Atualizar</button>
                     <button class="btn btn-danger" onclick="clearAlertas()">🗑️ Limpar Alertas</button>
@@ -316,20 +316,19 @@
             try {
                 const response = await fetch(`${API_BASE}/alertas`);
                 const data = await response.json();
-                
                 document.getElementById('total-alertas').textContent = data.total;
-                
                 const alertasHtml = data.alertas.map(alerta => `
                     <div class="alerta-item">
                         <div class="log-timestamp">${new Date(alerta.timestamp).toLocaleString('pt-BR')}</div>
                         <div><strong>Chat ID:</strong> ${alerta.chat_id}</div>
+                        <div><strong>IP:</strong> ${alerta.ip || '-'}</div>
+                        <div><strong>Tipo:</strong> ${typeof alerta.original === 'string' && alerta.original.trim().startsWith('{') ? 'JSON' : 'Texto Puro'}</div>
                         <div><strong>Mensagem:</strong></div>
                         <div style="background: #f1f1f1; padding: 10px; border-radius: 5px; margin-top: 5px; white-space: pre-wrap;">${alerta.text}</div>
+                        <details style="margin-top:5px;"><summary>Ver original</summary><pre style="font-size:0.9em;">${typeof alerta.original === 'string' ? alerta.original : JSON.stringify(alerta.original, null, 2)}</pre></details>
                     </div>
                 `).join('');
-                
                 document.getElementById('alertas-content').innerHTML = alertasHtml || '<div class="loading">Nenhum alerta encontrado</div>';
-                
             } catch (error) {
                 document.getElementById('alertas-content').innerHTML = `
                     <div class="error-message">
