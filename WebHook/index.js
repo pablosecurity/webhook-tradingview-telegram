@@ -189,21 +189,39 @@ app.post("/", async (req, res) => {
       });
       
       // Tenta extrair chat_id e text mesmo com JSON inválido
+      console.log("🔍 Tentando extrair dados do JSON inválido...");
+      
+      // Regex mais robusto para extrair dados
       const chatIdMatch = req.body.match(/"chat_id"\s*:\s*"([^"]+)"/);
       const textMatch = req.body.match(/"text"\s*:\s*"([^"]+)"/);
       
+      console.log("🔍 Chat ID match:", chatIdMatch);
+      console.log("🔍 Text match:", textMatch);
+      
       if (chatIdMatch && textMatch) {
+        // Limpa o texto de caracteres especiais
+        let cleanText = textMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r')
+          .replace(/\\t/g, '\t')
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, '\\');
+        
         payload = {
           chat_id: chatIdMatch[1],
-          text: textMatch[1].replace(/\\n/g, '\n')
+          text: cleanText
         };
         
         adicionarLog('json_recovery', 'Dados extraídos com sucesso do JSON inválido', {
           chat_id: payload.chat_id,
-          textLength: payload.text.length
+          textLength: payload.text.length,
+          originalBody: req.body.substring(0, 200) + '...'
         });
+        
+        console.log("✅ Dados extraídos:", payload);
       } else {
-        console.error("❌ Erro ao fazer parse do JSON:", err.message);
+        console.error("❌ Não foi possível extrair chat_id ou text do JSON inválido");
+        console.error("❌ Body recebido:", req.body);
         return res.status(400).send("Erro ao parsear JSON");
       }
     }
