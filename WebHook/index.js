@@ -190,10 +190,11 @@ app.post("/", async (req, res) => {
       
       // Tenta extrair chat_id e text mesmo com JSON inválido
       console.log("🔍 Tentando extrair dados do JSON inválido...");
+      console.log("🔍 Body completo:", req.body);
       
-      // Regex mais robusto para extrair dados
+      // Regex mais robusto para extrair dados - incluindo quebras de linha
       const chatIdMatch = req.body.match(/"chat_id"\s*:\s*"([^"]+)"/);
-      const textMatch = req.body.match(/"text"\s*:\s*"([^"]+)"/);
+      const textMatch = req.body.match(/"text"\s*:\s*"([^"]*?)"/);
       
       console.log("🔍 Chat ID match:", chatIdMatch);
       console.log("🔍 Text match:", textMatch);
@@ -220,9 +221,26 @@ app.post("/", async (req, res) => {
         
         console.log("✅ Dados extraídos:", payload);
       } else {
-        console.error("❌ Não foi possível extrair chat_id ou text do JSON inválido");
-        console.error("❌ Body recebido:", req.body);
-        return res.status(400).send("Erro ao parsear JSON");
+        // Tenta uma abordagem mais simples
+        console.log("🔍 Tentando abordagem alternativa...");
+        
+        // Remove caracteres problemáticos e tenta parsear novamente
+        let cleanedBody = req.body
+          .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+          .replace(/yyyy-MM-dd HH:mm:ss\d+/g, '2025-07-06 16:36:19');
+        
+        try {
+          payload = JSON.parse(cleanedBody);
+          adicionarLog('json_recovery', 'JSON parseado após limpeza', {
+            chat_id: payload.chat_id,
+            textLength: payload.text?.length || 0
+          });
+          console.log("✅ JSON parseado após limpeza:", payload);
+        } catch (secondError) {
+          console.error("❌ Não foi possível extrair dados do JSON inválido");
+          console.error("❌ Body recebido:", req.body);
+          return res.status(400).send("Erro ao parsear JSON");
+        }
       }
     }
   } else {
